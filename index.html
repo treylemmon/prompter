@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Prompter</title>
+  <meta name="description" content="A teleprompter for preaching and speaking. Works offline.">
+  <meta name="theme-color" content="#12100d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Prompter">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="fonts/atkinson-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ LIBRARY ============ -->
+<section id="view-library" class="view">
+  <header class="top">
+    <h1 class="brand"><span class="brand-mark">▶</span> Prompter</h1>
+    <button id="btn-add" class="btn primary">+ Add script</button>
+  </header>
+  <main class="wrap">
+    <div id="lib-list" class="lib-list"></div>
+    <div id="lib-empty" class="empty" hidden>
+      <p class="empty-big">No scripts yet.</p>
+      <p>Tap <b>+ Add script</b> to drop in a Word file, a text file, or paste your sermon.</p>
+      <button id="btn-sample" class="btn">Try the sample script</button>
+    </div>
+    <footer class="lib-foot">
+      <p>Scripts are saved on this device only.</p>
+      <div class="row-wrap">
+        <button id="btn-export" class="btn small">Save a backup file</button>
+        <button id="btn-import" class="btn small">Restore from backup</button>
+        <input id="import-file" type="file" accept=".json,application/json" hidden>
+      </div>
+    </footer>
+  </main>
+</section>
+
+<!-- ============ ADD / REPLACE ============ -->
+<section id="view-add" class="view" hidden>
+  <header class="top">
+    <button id="add-back" class="btn ghost">‹ Back</button>
+    <h1 id="add-heading">Add a script</h1>
+    <span class="spacer"></span>
+  </header>
+  <main class="wrap">
+    <label id="drop" class="drop" tabindex="0">
+      <input id="add-file" type="file" accept=".docx,.txt,.md,.markdown,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+      <span class="drop-icon">⬆</span>
+      <span class="drop-main">Drop a file here, or tap to choose one</span>
+      <span class="drop-sub">Word (.docx), text (.txt) or Markdown (.md)</span>
+    </label>
+    <p class="or">or paste your script below</p>
+    <div id="title-row" class="field">
+      <label for="add-title">Title</label>
+      <input id="add-title" type="text" placeholder="e.g. The Parable of the Talents" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="add-text">Script text</label>
+      <textarea id="add-text" placeholder="# Opening&#10;Good morning, church…&#10;[Slide 1 · Title]&#10;> Matthew 25:14 — For it will be like a man going on a journey…"></textarea>
+    </div>
+    <details class="help">
+      <summary>How the prompter reads your script</summary>
+      <ul>
+        <li><b># Heading</b> (or Word Heading 1/2/3) starts a new section.</li>
+        <li>No headings? Short lines (8 words or fewer, no ending punctuation) become sections.</li>
+        <li><b>[Walk to the left]</b> — anything in square brackets is a stage cue.</li>
+        <li><b>[Slide 5 · Matthew 25:14]</b> — shows a gold “▶ Slide 5” chip.</li>
+        <li><b>&gt; Scripture</b> — lines starting with &gt; are shown as scripture.</li>
+      </ul>
+    </details>
+    <div class="actions">
+      <button id="add-cancel" class="btn">Cancel</button>
+      <button id="add-save" class="btn primary">Save script</button>
+    </div>
+  </main>
+</section>
+
+<!-- ============ PROMPTER ============ -->
+<section id="view-prompter" class="view" hidden>
+  <div id="stage">
+    <div id="content"></div>
+    <div id="readline" aria-hidden="true"><span class="arrow">▶</span></div>
+  </div>
+  <div id="paused-pill" hidden>PAUSED</div>
+  <div id="hint" hidden>Tap empty space or press <kbd>Space</kbd> to start · Tap a line to flag it</div>
+
+  <nav id="bar" aria-label="Prompter controls">
+    <button id="b-home" class="cb" aria-label="Back to library" title="Library">‹</button>
+    <button id="b-play" class="cb play" aria-label="Start">▶ Start</button>
+    <div class="timer" title="Total time">
+      <span class="tl">Total</span>
+      <span id="t-total">0:00 / 25:00</span>
+    </div>
+    <div class="timer sec" title="Current section time">
+      <span id="t-secname" class="tl">Section</span>
+      <span id="t-sec">0:00</span>
+    </div>
+    <div class="grp" role="group" aria-label="Speed">
+      <button id="b-slower" class="cb" aria-label="Slower">−</button>
+      <span class="val"><span class="tl">Speed</span><span id="v-speed">5</span></span>
+      <button id="b-faster" class="cb" aria-label="Faster">+</button>
+    </div>
+    <div class="grp" role="group" aria-label="Text size">
+      <button id="b-smaller" class="cb" aria-label="Smaller text">A−</button>
+      <button id="b-bigger" class="cb" aria-label="Bigger text">A+</button>
+    </div>
+    <button id="b-jump" class="cb" aria-label="Jump to section">Jump</button>
+    <button id="b-mirror" class="cb" aria-pressed="false" aria-label="Mirror text">Mirror</button>
+    <button id="b-notes" class="cb" aria-label="Notes">Notes <span id="flag-count" class="badge" hidden>0</span></button>
+  </nav>
+
+  <div id="scrim" hidden></div>
+
+  <!-- Jump panel -->
+  <aside id="panel-jump" class="panel" hidden aria-label="Jump to section">
+    <div class="panel-head">
+      <h2>Jump to section</h2>
+      <button class="cb close" data-close aria-label="Close">✕</button>
+    </div>
+    <div id="jump-list" class="panel-body"></div>
+  </aside>
+
+  <!-- Notes panel -->
+  <aside id="panel-notes" class="panel" hidden aria-label="Run-through notes">
+    <div class="panel-head">
+      <h2>Run-through notes</h2>
+      <button class="cb close" data-close aria-label="Close">✕</button>
+    </div>
+    <div class="panel-body">
+      <button id="n-copy" class="btn primary block">Copy notes for Claude</button>
+      <div id="copy-fallback" hidden>
+        <p class="small">Copying was blocked. The text is selected below — press and hold (or ⌘C) to copy it.</p>
+        <textarea id="copy-box" readonly></textarea>
+      </div>
+
+      <h3>Times</h3>
+      <table class="times"><tbody id="n-times"></tbody></table>
+
+      <h3>Flags <span id="n-flagcount" class="muted"></span></h3>
+      <ol id="n-flags" class="flag-list"></ol>
+      <p id="n-noflags" class="muted small">No flags yet. Tap any line while reading to flag it.</p>
+
+      <div class="row-wrap">
+        <button id="n-saverun" class="btn">Finish &amp; save this run</button>
+        <button id="n-reset" class="btn">Reset times</button>
+        <button id="n-clear" class="btn danger">Clear flags</button>
+      </div>
+
+      <h3>Past run-throughs</h3>
+      <ul id="n-runs" class="runs"></ul>
+    </div>
+  </aside>
+
+  <!-- Flag sheet -->
+  <div id="sheet-flag" class="sheet" hidden role="dialog" aria-label="Flag this line">
+    <div class="sheet-card">
+      <div class="panel-head">
+        <h2 id="flag-title">Flag this line</h2>
+        <button class="cb close" data-close aria-label="Close">✕</button>
+      </div>
+      <blockquote id="flag-line"></blockquote>
+      <div id="flag-chips" class="chips"></div>
+      <textarea id="flag-note" placeholder="Add a note (optional)"></textarea>
+      <div class="actions">
+        <button id="flag-remove" class="btn danger">Remove flag</button>
+        <span class="spacer"></span>
+        <button id="flag-cancel" class="btn">Cancel</button>
+        <button id="flag-save" class="btn primary">Save flag</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SHARED ============ -->
+<div id="modal" class="modal" hidden role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div id="modal-actions" class="actions"></div>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="parse.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
