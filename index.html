@@ -22,7 +22,8 @@
 <section id="view-library" class="view">
   <header class="top">
     <h1 class="brand"><span class="brand-mark">▶</span> Prompter</h1>
-    <button id="btn-add" class="btn primary">+ Add script</button>
+    <button id="btn-bank" class="btn">All notes <span id="bank-count" class="badge" hidden>0</span></button>
+    <button id="btn-add" class="btn primary">+ Add<span class="wide"> script</span></button>
   </header>
   <main class="wrap">
     <div id="lib-list" class="lib-list"></div>
@@ -51,10 +52,10 @@
   </header>
   <main class="wrap">
     <label id="drop" class="drop" tabindex="0">
-      <input id="add-file" type="file" accept=".docx,.txt,.md,.markdown,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+      <input id="add-file" type="file" accept=".docx,.pdf,application/pdf,.txt,.md,.markdown,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
       <span class="drop-icon">⬆</span>
       <span class="drop-main">Drop a file here, or tap to choose one</span>
-      <span class="drop-sub">Word (.docx), text (.txt) or Markdown (.md)</span>
+      <span class="drop-sub">Word (.docx), PDF, text (.txt) or Markdown (.md)</span>
     </label>
     <p class="or">or paste your script below</p>
     <div id="title-row" class="field">
@@ -69,10 +70,12 @@
       <summary>How the prompter reads your script</summary>
       <ul>
         <li><b># Heading</b> (or Word Heading 1/2/3) starts a new section.</li>
+        <li>PDFs: bigger text becomes a section heading. Check the result before saving — PDFs don’t store headings, so the app works them out from text size.</li>
         <li>No headings? Short lines (8 words or fewer, no ending punctuation) become sections.</li>
         <li><b>[Walk to the left]</b> — anything in square brackets is a stage cue.</li>
         <li><b>[Slide 5 · Matthew 25:14]</b> — shows a gold “▶ Slide 5” chip.</li>
         <li><b>&gt; Scripture</b> — lines starting with &gt; are shown as scripture.</li>
+        <li><b>Several scripts in one file?</b> Section breaks in Word or Google Docs (Insert → Break → Section break) split it into separate scripts. When pasting, put a line <b>=== SECTION BREAK ===</b> between them.</li>
       </ul>
     </details>
     <div class="actions">
@@ -176,6 +179,24 @@
       </div>
     </div>
   </div>
+</section>
+
+<!-- ============ NOTES BANK ============ -->
+<section id="view-bank" class="view" hidden>
+  <header class="top">
+    <button id="bank-back" class="btn ghost">‹ Back</button>
+    <h1>All notes</h1>
+    <span class="spacer"></span>
+  </header>
+  <main class="wrap">
+    <p id="bank-summary" class="muted"></p>
+    <div class="row-wrap">
+      <button id="bank-copy" class="btn primary">Copy all notes</button>
+      <button id="bank-clear" class="btn danger">Clear all</button>
+    </div>
+    <p class="small muted">Clear all empties the flags and times on every script listed here. Each script’s run time is saved to its history first.</p>
+    <textarea id="bank-text" readonly></textarea>
+  </main>
 </section>
 
 <!-- ============ SHARED ============ -->

@@ -12,7 +12,7 @@ A teleprompter for preaching and speaking. Installable web app, works offline, n
 | `app.js` | Everything else: library, prompter, timers, flags, notes |
 | `sw.js` | Offline support (caches the app on the device) |
 | `manifest.webmanifest` | App name and icon for "Add to Home Screen" |
-| `lib/` | mammoth.js 1.8.0, which reads Word files |
+| `lib/` | mammoth.js 1.8.0 (reads Word files) pdf.js 3.11.174 (reads PDFs), JSZip 3.10.1 (finds section breaks in Word files) |
 | `fonts/` | Atkinson Hyperlegible |
 | `icons/` | App icons |
 

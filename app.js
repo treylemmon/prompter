@@ -150,6 +150,7 @@ function renderLibrary() {
   list.innerHTML = '';
   const scripts = Store.all().sort((a, b) => b.createdAt - a.createdAt);
   $('#lib-empty').hidden = scripts.length > 0;
+  updateBankButton();
 
   for (const s of scripts) {
     const card = el('div', 'card');
@@ -250,17 +251,16 @@ function showAdd(replaceId) {
   if (s) $('#add-heading').textContent = 'New version of “' + s.title + '”';
 }
 
-let mammothLoading;
-function loadMammoth() {
-  if (window.mammoth) return Promise.resolve();
-  mammothLoading = mammothLoading || new Promise((res, rej) => {
+const scriptLoads = {};
+function loadScript(src, what) {
+  scriptLoads[src] = scriptLoads[src] || new Promise((res, rej) => {
     const sc = document.createElement('script');
-    sc.src = 'lib/mammoth.browser.min.js';
+    sc.src = src;
     sc.onload = res;
-    sc.onerror = () => { mammothLoading = null; rej(new Error('Could not load the Word reader')); };
+    sc.onerror = () => { delete scriptLoads[src]; rej(new Error('Could not load the ' + what)); };
     document.head.appendChild(sc);
   });
-  return mammothLoading;
+  return scriptLoads[src];
 }
 
 async function readFile(file) {
@@ -269,8 +269,13 @@ async function readFile(file) {
   let text;
   if (ext === 'docx') {
     toast('Reading Word file…');
-    await loadMammoth();
+    if (!window.mammoth) await loadScript('lib/mammoth.browser.min.js', 'Word reader');
+    if (!window.JSZip) await loadScript('lib/jszip.min.js', 'Word reader').catch(() => {});
     text = await Parser.docxToText(await file.arrayBuffer());
+  } else if (ext === 'pdf' || file.type === 'application/pdf') {
+    toast('Reading PDF…');
+    if (!window.pdfjsLib) await loadScript('lib/pdf.min.js', 'PDF reader');
+    text = await Parser.pdfToText(await file.arrayBuffer());
   } else if (ext === 'doc') {
     throw new Error('Old .doc files aren’t supported. In Word, use File → Save As → .docx.');
   } else {
@@ -285,16 +290,51 @@ async function handleAddFile(file) {
     const { title, text } = await readFile(file);
     $('#add-text').value = text;
     if (!$('#add-title').value.trim()) $('#add-title').value = title;
-    const n = Parser.parse(text).sections.length;
-    toast(`Loaded “${file.name}” — ${n} section${n === 1 ? '' : 's'} found. Check it, then save.`, 3500);
+    const parts = Parser.splitParts(text);
+    if (parts.length > 1 && !addMode.replaceId) {
+      toast(`Loaded “${file.name}” — ${parts.length} parts separated by section breaks. Tap Save to make each one its own script.`, 5000);
+    } else {
+      const n = Parser.parse(text).sections.length;
+      toast(`Loaded “${file.name}” — ${n} section${n === 1 ? '' : 's'} found. Check it, then save.`, 3500);
+    }
   } catch (e) {
     toast(e.message || 'Could not read that file.', 5000);
   }
 }
 
-function saveAdd() {
-  const text = $('#add-text').value;
+async function saveAdd() {
+  let text = $('#add-text').value;
   if (!text.trim()) { toast('Add some script text first.'); return; }
+  const parts = Parser.splitParts(text);
+  if (parts.length > 1 && addMode.replaceId) {
+    text = parts.join('\n\n'); // a replacement is one script; drop the break lines
+  } else if (parts.length > 1) {
+    const list = el('ol', 'part-list');
+    parts.forEach((pt) => list.appendChild(el('li', '', Parser.partTitle(pt))));
+    const choice = await modal({
+      title: `Split into ${parts.length} scripts?`,
+      text: 'This has section breaks. Each part can be saved as its own script:',
+      body: list,
+      buttons: [
+        { label: 'Cancel', value: null },
+        { label: 'Keep as one', value: 'one' },
+        { label: `Save ${parts.length} scripts`, value: 'split', kind: 'primary' },
+      ],
+    });
+    if (!choice) return;
+    if (choice === 'split') {
+      const now = Date.now();
+      let ok = true;
+      parts.forEach((pt, i) => {
+        const sc = newScript(Parser.partTitle(pt), pt);
+        sc.createdAt = now - i; // keeps document order at the top of the newest-first list
+        ok = Store.save(sc) && ok;
+      });
+      if (ok) { toast(`Saved ${parts.length} scripts`); go('#/'); }
+      return;
+    }
+    text = parts.join('\n\n');
+  }
   if (addMode.replaceId) {
     const s = Store.get(addMode.replaceId);
     if (!s) return go('#/');
@@ -601,6 +641,7 @@ function nudge(dir) {
 function addTime(dt) {
   const t = P.s.times;
   t.total += dt;
+  P.s.practicedAt = Date.now();
   const key = P.doc.sections[P.curSec] ? P.doc.sections[P.curSec].key : null;
   if (key) t.sections[key] = (t.sections[key] || 0) + dt;
   P.dirty = true;
@@ -817,40 +858,111 @@ function openNotes() {
   showPanel('#panel-notes');
 }
 
-function notesText() {
+/** Plain-text run-through notes for any script (doc = its parsed text). */
+function notesTextFor(s, doc) {
+  doc = doc || Parser.parse(s.source);
+  const times = (s.times && s.times.sections) || {};
+  const flags = s.flags || {};
   const lines = [];
-  lines.push(`${P.s.title}: run-through notes`);
-  lines.push(`Total time: ${fmt(P.s.times.total)} (target ${fmt(P.s.target)})`);
+  lines.push(`${s.title}: run-through notes`);
+  lines.push(`Total time: ${fmt(s.times ? s.times.total : 0)} (target ${fmt(s.target)})`);
   lines.push('Section times:');
-  for (const x of sectionTimesList()) lines.push(`- ${x.title}: ${fmt(x.sec)}`);
-  const flags = orderedFlags();
-  lines.push('Flags:' + (flags.length ? '' : ' none'));
-  flags.forEach(({ it, f }, n) => {
-    lines.push(`${n + 1}. [${P.doc.sections[it.sec].title}] "${Parser.plainText(it)}"`);
-    const sum = flagSummary(f);
+  for (const sec of doc.sections) lines.push(`- ${sec.title}: ${fmt(times[sec.key] || 0)}`);
+  const flagged = doc.items.filter((it) => flags[it.key]);
+  lines.push('Flags:' + (flagged.length ? '' : ' none'));
+  flagged.forEach((it, n) => {
+    lines.push(`${n + 1}. [${doc.sections[it.sec].title}] "${Parser.plainText(it)}"`);
+    const sum = flagSummary(flags[it.key]);
     if (sum) lines.push(`   Note: ${sum}`);
   });
   return lines.join('\n');
 }
+const notesText = () => notesTextFor(P.s, P.doc);
 
-async function copyNotes() {
-  const text = notesText();
+/** Copy text; if the clipboard is blocked, show it selected in `box` so it can be copied by hand. */
+async function copyText(text, box, wrap) {
   let ok = false;
   try {
     if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); ok = true; }
   } catch { ok = false; }
   if (!ok) {
-    // older fallback
-    const box = $('#copy-box');
     box.value = text;
-    $('#copy-fallback').hidden = false;
+    if (wrap) wrap.hidden = false;
     box.focus();
     box.select();
     box.setSelectionRange(0, text.length);
     try { ok = document.execCommand('copy'); } catch { ok = false; }
-    if (ok) { $('#copy-fallback').hidden = true; }
+    if (ok && wrap) wrap.hidden = true;
+    if (!ok) toast('Copying was blocked — the text is selected, press and hold to copy it.', 4000);
   }
-  if (ok) toast('Notes copied — paste them into Claude');
+  return ok;
+}
+
+async function copyNotes() {
+  if (await copyText(notesText(), $('#copy-box'), $('#copy-fallback'))) toast('Notes copied — paste them into Claude');
+}
+
+/* --- notes bank: every script's notes in one place --- */
+function bankScripts() {
+  return Store.all()
+    .filter((s) => Object.keys(s.flags || {}).length || (s.times && s.times.total >= 1))
+    .sort((a, b) => (a.practicedAt || a.updatedAt) - (b.practicedAt || b.updatedAt));
+}
+function bankText(list) {
+  if (!list.length) return '';
+  const head = list.length > 1 ? `Prompter notes for ${list.length} scripts\n\n` : '';
+  return head + list.map((s) => notesTextFor(s)).join('\n\n----------\n\n');
+}
+function renderBank() {
+  const list = bankScripts();
+  const nflags = list.reduce((n, s) => n + Object.keys(s.flags || {}).length, 0);
+  $('#bank-summary').textContent = list.length
+    ? `${list.length} script${list.length > 1 ? 's' : ''} · ${nflags} flag${nflags === 1 ? '' : 's'}`
+    : 'No notes yet. Run through a script and flag lines, and they’ll collect here.';
+  $('#bank-text').value = bankText(list);
+  $('#bank-text').hidden = !list.length;
+  $('#bank-copy').disabled = !list.length;
+  $('#bank-clear').disabled = !list.length;
+  resetBankClear();
+}
+let bankArmed = false, bankTimer;
+function resetBankClear() {
+  bankArmed = false;
+  clearTimeout(bankTimer);
+  const b = $('#bank-clear');
+  b.textContent = 'Clear all';
+  b.classList.remove('confirm');
+}
+function clearBank() {
+  const list = bankScripts();
+  if (!list.length) return;
+  if (!bankArmed) {
+    bankArmed = true;
+    const b = $('#bank-clear');
+    b.textContent = `Tap again to clear ${list.length} script${list.length > 1 ? 's' : ''}`;
+    b.classList.add('confirm');
+    bankTimer = setTimeout(resetBankClear, 4000);
+    return;
+  }
+  for (const s of list) {
+    const t = s.times || { total: 0, sections: {} };
+    if (t.total >= 5 && !t.finished) {
+      const doc = Parser.parse(s.source);
+      s.runs = s.runs || [];
+      s.runs.push({ date: Date.now(), total: Math.round(t.total), target: s.target, sections: doc.sections.map((x) => ({ title: x.title, sec: Math.round(t.sections[x.key] || 0) })) });
+    }
+    s.flags = {};
+    s.times = { total: 0, sections: {}, finished: false };
+    Store.save(s);
+  }
+  renderBank();
+  toast('Cleared — run times were saved to each script’s history');
+}
+function updateBankButton() {
+  const n = bankScripts().length;
+  const b = $('#bank-count');
+  b.textContent = n;
+  b.hidden = !n;
 }
 
 let clearArmed = false, clearTimer;
@@ -944,7 +1056,7 @@ function onKey(e) {
   }
 }
 
-const VIEWS = ['#view-library', '#view-add', '#view-prompter'];
+const VIEWS = ['#view-library', '#view-add', '#view-prompter', '#view-bank'];
 function showView(sel) {
   VIEWS.forEach((v) => ($(v).hidden = v !== sel));
   window.scrollTo(0, 0);
@@ -964,6 +1076,10 @@ function route() {
   if ((m = h.match(/^#\/s\/(.+)$/))) {
     showView('#view-prompter');
     openPrompter(decodeURIComponent(m[1]));
+  } else if (h === '#/notes') {
+    leavePrompter();
+    renderBank();
+    showView('#view-bank');
   } else if (h === '#/add') {
     leavePrompter();
     showAdd(null);
@@ -1015,6 +1131,12 @@ function init() {
     renderLibrary();
   });
   $('#btn-export').addEventListener('click', exportBackup);
+  $('#btn-bank').addEventListener('click', () => go('#/notes'));
+  $('#bank-back').addEventListener('click', () => go('#/'));
+  $('#bank-copy').addEventListener('click', async () => {
+    if (await copyText($('#bank-text').value, $('#bank-text'))) toast('All notes copied — paste them into Claude, then Clear all');
+  });
+  $('#bank-clear').addEventListener('click', clearBank);
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', (e) => { if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = ''; });
 

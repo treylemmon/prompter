@@ -366,3 +366,20 @@ table.times tr.total.over td:last-child { color: var(--red); }
   #bar { padding-left: calc(6px + var(--sal)); padding-right: calc(6px + var(--sar)); }
 }
 .btn:disabled { opacity: 0.55; cursor: default; }
+
+/* notes bank + split dialog */
+#bank-text {
+  width: 100%; min-height: 55vh; margin-top: 14px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px; font-size: 15px; line-height: 1.5; resize: vertical;
+}
+.part-list { margin: 0 0 4px; padding-left: 22px; max-height: 40vh; overflow-y: auto; }
+.part-list li { padding: 3px 0; }
+.top .btn { white-space: nowrap; }
+.brand { white-space: nowrap; }
+@media (max-width: 480px) {
+  .wide { display: none; }
+  .top { gap: 8px; }
+  .top .btn { padding: 8px 12px; }
+  .top h1 { font-size: 20px; }
+}

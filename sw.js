@@ -1,6 +1,6 @@
 /* Prompter — offline support.
    When you change any app file, bump VERSION so devices pick up the update. */
-const VERSION = 'prompter-v1';
+const VERSION = 'prompter-v3';
 const FILES = [
   './',
   './index.html',
@@ -9,6 +9,9 @@ const FILES = [
   './app.js',
   './manifest.webmanifest',
   './lib/mammoth.browser.min.js',
+  './lib/pdf.min.js',
+  './lib/pdf.worker.min.js',
+  './lib/jszip.min.js',
   './fonts/atkinson-400-normal.woff2',
   './fonts/atkinson-400-italic.woff2',
   './fonts/atkinson-700-normal.woff2',
