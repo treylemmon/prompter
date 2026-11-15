@@ -1,6 +1,6 @@
 /* Prompter — offline support.
    When you change any app file, bump VERSION so devices pick up the update. */
-const VERSION = 'prompter-v4';
+const VERSION = 'prompter-v5';
 const FILES = [
   './',
   './index.html',
@@ -24,7 +24,7 @@ const FILES = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
