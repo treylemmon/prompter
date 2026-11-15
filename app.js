@@ -165,6 +165,7 @@ function renderLibrary() {
     meta.appendChild(el('span', '', 'Target ' + fmt(s.target)));
     const nflags = Object.keys(s.flags || {}).length;
     if (nflags) meta.appendChild(el('span', '', `${nflags} flag${nflags > 1 ? 's' : ''}`));
+    if (s.drive) meta.appendChild(el('span', 'gdoc', s.drive.lastSync ? 'Google Doc · synced ' + fmtAgo(s.drive.lastSync) : 'Google Doc'));
     open.appendChild(meta);
     open.addEventListener('click', () => go('#/s/' + s.id));
 
@@ -186,6 +187,9 @@ async function scriptMenu(id) {
       { label: 'Rename', value: 'rename' },
       { label: `Set target time (now ${fmt(s.target)})`, value: 'target' },
       { label: 'Replace text with a new version', value: 'replace' },
+      ...(s.drive
+        ? [{ label: 'Sync with Google Drive', value: 'sync' }, { label: 'Unlink from Google Doc', value: 'unlink' }]
+        : [{ label: 'Link to a Google Doc', value: 'link' }]),
       { label: 'Delete script', value: 'delete', kind: 'danger' },
       { label: 'Cancel', value: null },
     ],
@@ -206,6 +210,12 @@ async function scriptMenu(id) {
     }
   } else if (choice === 'replace') {
     go('#/replace/' + id);
+  } else if (choice === 'sync') {
+    syncTap([id]);
+  } else if (choice === 'unlink') {
+    delete s.drive; Store.save(s); renderLibrary(); toast('Unlinked. The script stays in Prompter.');
+  } else if (choice === 'link') {
+    linkTap(id);
   } else if (choice === 'delete') {
     const ok = await modal({ title: 'Delete “' + s.title + '”?', text: 'This removes the script, its flags and its run history from this device. It can’t be undone.', buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, kind: 'danger confirm' }] });
     if (ok) { Store.remove(id); renderLibrary(); toast('Deleted'); }
@@ -241,7 +251,7 @@ async function importBackup(file) {
 let addMode = { replaceId: null };
 
 function showAdd(replaceId) {
-  addMode = { replaceId };
+  addMode = { replaceId, drive: null };
   const s = replaceId && Store.get(replaceId);
   $('#add-heading').textContent = s ? 'Replace text' : 'Add a script';
   $('#title-row').hidden = !!s;
@@ -263,14 +273,18 @@ function loadScript(src, what) {
   return scriptLoads[src];
 }
 
+async function loadWordReader() {
+  if (!window.mammoth) await loadScript('lib/mammoth.browser.min.js', 'Word reader');
+  if (!window.JSZip) await loadScript('lib/jszip.min.js', 'Word reader').catch(() => {});
+}
+
 async function readFile(file) {
   const name = file.name || 'Script';
   const ext = (name.split('.').pop() || '').toLowerCase();
   let text;
   if (ext === 'docx') {
     toast('Reading Word file…');
-    if (!window.mammoth) await loadScript('lib/mammoth.browser.min.js', 'Word reader');
-    if (!window.JSZip) await loadScript('lib/jszip.min.js', 'Word reader').catch(() => {});
+    await loadWordReader();
     text = await Parser.docxToText(await file.arrayBuffer());
   } else if (ext === 'pdf' || file.type === 'application/pdf') {
     toast('Reading PDF…');
@@ -288,18 +302,54 @@ async function handleAddFile(file) {
   if (!file) return;
   try {
     const { title, text } = await readFile(file);
-    $('#add-text').value = text;
-    if (!$('#add-title').value.trim()) $('#add-title').value = title;
-    const parts = Parser.splitParts(text);
-    if (parts.length > 1 && !addMode.replaceId) {
-      toast(`Loaded “${file.name}” — ${parts.length} parts separated by section breaks. Tap Save to make each one its own script.`, 5000);
-    } else {
-      const n = Parser.parse(text).sections.length;
-      toast(`Loaded “${file.name}” — ${n} section${n === 1 ? '' : 's'} found. Check it, then save.`, 3500);
-    }
+    addMode.drive = null;
+    fillAddText(file.name, title, text);
   } catch (e) {
     toast(e.message || 'Could not read that file.', 5000);
   }
+}
+
+/** Put imported text in the add screen and say what was found. */
+function fillAddText(label, title, text) {
+  $('#add-text').value = text;
+  if (!$('#add-title').value.trim()) $('#add-title').value = title;
+  const parts = Parser.splitParts(text);
+  if (parts.length > 1 && !addMode.replaceId) {
+    toast(`Loaded “${label}” — ${parts.length} parts separated by section breaks. Tap Save to make each one its own script.`, 5000);
+  } else {
+    const n = Parser.parse(text).sections.length;
+    toast(`Loaded “${label}” — ${n} section${n === 1 ? '' : 's'} found. Check it, then save.`, 3500);
+  }
+}
+
+/** "From Google Drive" on the add screen. Must start straight from the tap (sign-in window). */
+function addFromDrive() {
+  GDrive.withToken()
+    .then(() => GDrive.pick())
+    .then(async (f) => {
+      if (!f) return;
+      toast('Reading “' + f.name + '” from Google Drive…', 6000);
+      const m = await GDrive.meta(f.id);
+      const text = await GDrive.readText(m, loadWordReader);
+      addMode.drive = { id: m.id, name: m.name, mimeType: m.mimeType, modifiedTime: m.modifiedTime, link: m.webViewLink };
+      fillAddText(m.name, m.name, text);
+    })
+    .catch((e) => toast(e.message || 'Couldn’t open Google Drive.', 5000));
+}
+
+/** Swap in new script text, keeping flags whose lines are unchanged. */
+function applyNewText(s, text) {
+  const keys = new Set(Parser.parse(text).items.map((i) => i.key));
+  const before = Object.keys(s.flags || {});
+  const kept = {}, dropped = [];
+  for (const k of before) {
+    if (keys.has(k)) kept[k] = s.flags[k];
+    else dropped.push({ text: k.split('|').slice(1).join('|'), note: flagSummary(s.flags[k]) });
+  }
+  s.flags = kept;
+  s.source = text;
+  if (s.settings) s.settings.pos = 0;
+  return { kept: Object.keys(kept).length, total: before.length, dropped };
 }
 
 async function saveAdd() {
@@ -328,6 +378,7 @@ async function saveAdd() {
       parts.forEach((pt, i) => {
         const sc = newScript(Parser.partTitle(pt), pt);
         sc.createdAt = now - i; // keeps document order at the top of the newest-first list
+        if (addMode.drive) sc.drive = { ...addMode.drive, part: i, partTitle: Parser.partTitle(pt) };
         ok = Store.save(sc) && ok;
       });
       if (ok) { toast(`Saved ${parts.length} scripts`); go('#/'); }
@@ -338,17 +389,10 @@ async function saveAdd() {
   if (addMode.replaceId) {
     const s = Store.get(addMode.replaceId);
     if (!s) return go('#/');
-    const parsed = Parser.parse(text);
-    const keys = new Set(parsed.items.map((i) => i.key));
-    const before = Object.keys(s.flags || {});
-    const kept = {};
-    for (const k of before) if (keys.has(k)) kept[k] = s.flags[k];
-    s.flags = kept;
-    s.source = text;
-    s.settings.pos = 0;
+    const r = applyNewText(s, text);
+    if (addMode.drive) s.drive = { ...addMode.drive, part: null };
     Store.save(s);
-    const dropped = before.length - Object.keys(kept).length;
-    toast(before.length ? `Text replaced. Kept ${Object.keys(kept).length} of ${before.length} flags${dropped ? ' (the other lines changed)' : ''}.` : 'Text replaced.', 4500);
+    toast(r.total ? `Text replaced. Kept ${r.kept} of ${r.total} flags${r.dropped.length ? ' (the other lines changed)' : ''}.` : 'Text replaced.', 4500);
     go('#/');
   } else {
     let title = $('#add-title').value.trim();
@@ -357,8 +401,138 @@ async function saveAdd() {
       title = (p.items[0] && p.items[0].text.slice(0, 60)) || 'Untitled script';
     }
     const s = newScript(title, text);
+    if (addMode.drive) s.drive = { ...addMode.drive, part: null };
     if (Store.save(s)) { toast('Saved “' + title + '”'); go('#/'); }
   }
+}
+
+/* ============================================================
+   4b. GOOGLE DRIVE SYNC
+   ============================================================ */
+function fmtAgo(ts) {
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  const h = Math.round(m / 60);
+  if (h < 24) return h + ' hr ago';
+  return fmtDate(ts);
+}
+
+function driveNotesText(s) {
+  const d = s.drive;
+  const lines = [];
+  lines.push(`${s.title} — Prompter notes`);
+  lines.push(`Script doc: ${d.name}${d.part != null ? ` (the part titled “${d.partTitle}”)` : ''}`);
+  if (d.link) lines.push(d.link);
+  lines.push(`Last synced from Prompter: ${fmtDate(Date.now(), true)}`);
+  lines.push('');
+  lines.push('For Claude: these flags come from practice run-throughs in my teleprompter. Each quotes a line exactly as it appears in the script doc. Please make the edits in the script doc itself, keep the # headings, [stage cues] and [Slide N] cues unless a note says otherwise, and tell me what you changed.');
+  lines.push('');
+  lines.push(notesTextFor(s));
+  const runs = (s.runs || []).slice(-5).reverse();
+  if (runs.length) {
+    lines.push('');
+    lines.push('Recent run-throughs:');
+    for (const r of runs) lines.push(`- ${fmtDate(r.date, true)}: ${fmt(r.total)}`);
+  }
+  if (d.resolved && d.resolved.flags.length) {
+    lines.push('');
+    lines.push(`Lines that changed in the doc since they were flagged (probably already handled, ${fmtDate(d.resolved.at, true)}):`);
+    for (const f of d.resolved.flags) lines.push(`- "${f.text}"${f.note ? ' — ' + f.note : ''}`);
+  }
+  return lines.join('\n');
+}
+
+/** Pull the doc into the script if it changed, then write the notes doc. Needs a sign-in token. */
+async function syncScript(s) {
+  const d = s.drive;
+  let m;
+  try { m = await GDrive.meta(d.id); } catch (e) {
+    if (e.status === 404) throw new Error(`“${d.name}” isn’t available in Google Drive any more.`);
+    throw e;
+  }
+  if (m.trashed) throw new Error(`“${m.name}” is in the Google Drive trash.`);
+  let changed = false, dropped = [];
+  if (m.modifiedTime !== d.modifiedTime) {
+    let text = await GDrive.readText(m, loadWordReader);
+    const parts = Parser.splitParts(text);
+    if (d.part != null) {
+      let idx = parts.findIndex((p) => Parser.partTitle(p) === d.partTitle);
+      if (idx < 0 && d.part < parts.length) idx = d.part;
+      if (idx < 0) throw new Error(`Couldn’t find the part “${d.partTitle}” in “${m.name}”.`);
+      text = parts[idx];
+      d.part = idx;
+      d.partTitle = Parser.partTitle(text);
+    } else {
+      text = parts.join('\n\n');
+    }
+    if (Parser.norm(text) !== Parser.norm(s.source)) {
+      const r = applyNewText(s, text);
+      dropped = r.dropped;
+      changed = true;
+      d.resolved = { at: Date.now(), flags: dropped };
+    }
+    d.modifiedTime = m.modifiedTime;
+    d.name = m.name;
+    d.link = m.webViewLink;
+  }
+  d.notesId = await GDrive.writeNotes(d.notesId, `${s.title} — Prompter notes`, driveNotesText(s));
+  d.lastSync = Date.now();
+  Store.save(s);
+  return { changed, dropped };
+}
+
+/** Sync one or more scripts. Call straight from a tap (Google sign-in needs it). */
+function syncTap(ids, after) {
+  if (P.s) saveNow();
+  GDrive.withToken()
+    .then(async () => {
+      const list = ids.map((id) => Store.get(id)).filter((s) => s && s.drive);
+      if (!list.length) { toast('No scripts are linked to Google Docs yet.'); return; }
+      toast(`Syncing ${list.length > 1 ? list.length + ' scripts' : '“' + list[0].title + '”'}…`, 20000);
+      let updated = 0, cleared = 0;
+      const errors = [];
+      for (const s of list) {
+        try {
+          const r = await syncScript(s);
+          if (r.changed) { updated++; cleared += r.dropped.length; }
+        } catch (e) { errors.push(`${s.title}: ${e.message}`); }
+      }
+      const done = list.length - errors.length;
+      let msg = done ? `Synced${list.length > 1 ? ' ' + done + ' scripts' : ''}. ` : '';
+      msg += updated ? `${updated} updated from Google Docs${cleared ? `, ${cleared} flag${cleared > 1 ? 's' : ''} on changed lines cleared` : ''}. Notes saved to Drive.` : (done ? 'No changes in the doc; notes saved to Drive.' : '');
+      if (errors.length) msg += ' ' + errors.join(' ');
+      toast(msg.trim(), errors.length ? 9000 : 5000);
+      if (P.s && ids.includes(P.s.id)) {
+        openPrompter(P.s.id);
+        if (!$('#panel-notes').hidden) renderNotes();
+      }
+      if (after) after();
+      if (!$('#view-library').hidden) renderLibrary();
+    })
+    .catch((e) => toast(e.message || 'Sync failed.', 6000));
+}
+
+/** Link an existing script to a Google Doc, then sync (the doc becomes the source of the text). */
+function linkTap(id) {
+  GDrive.withToken()
+    .then(() => GDrive.pick())
+    .then(async (f) => {
+      if (!f) return;
+      const s = Store.get(id);
+      const ok = await modal({
+        title: 'Link to “' + f.name + '”?',
+        text: 'From now on, Sync replaces this script’s text with the Google Doc’s text (flags on unchanged lines are kept), and saves your notes to Drive.',
+        buttons: [{ label: 'Cancel', value: false }, { label: 'Link and sync', value: true, kind: 'primary' }],
+      });
+      if (!ok) return;
+      s.drive = { id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: null, part: null };
+      Store.save(s);
+      const r = await syncScript(s);
+      toast(`Linked to “${f.name}”${r.changed ? ' and updated from the doc' : ''}. Notes saved to Drive.`, 5000);
+      renderLibrary();
+    })
+    .catch((e) => toast(e.message || 'Couldn’t link to Google Drive.', 6000));
 }
 
 /* ============================================================
@@ -831,6 +1005,11 @@ function renderNotes() {
   $('#n-flagcount').textContent = flags.length ? `(${flags.length})` : '';
   resetClearBtn();
 
+  // Google Drive
+  const d = P.s.drive;
+  $('#n-drive').hidden = !d;
+  if (d) $('#n-drive-info').textContent = `Linked to “${d.name}”` + (d.lastSync ? ` · synced ${fmtAgo(d.lastSync)}` : ' · not synced yet');
+
   // save-run button
   const sr = $('#n-saverun');
   sr.disabled = P.s.times.total < 1 || P.s.times.finished;
@@ -923,6 +1102,9 @@ function renderBank() {
   $('#bank-text').hidden = !list.length;
   $('#bank-copy').disabled = !list.length;
   $('#bank-clear').disabled = !list.length;
+  const linked = Store.all().filter((s) => s.drive).length;
+  $('#bank-sync').hidden = !linked;
+  $('#bank-sync').textContent = `Sync ${linked} Google Doc${linked === 1 ? '' : 's'}`;
   resetBankClear();
 }
 let bankArmed = false, bankTimer;
@@ -1137,6 +1319,11 @@ function init() {
     if (await copyText($('#bank-text').value, $('#bank-text'))) toast('All notes copied — paste them into Claude, then Clear all');
   });
   $('#bank-clear').addEventListener('click', clearBank);
+  $('#bank-sync').addEventListener('click', () => syncTap(Store.all().filter((s) => s.drive).map((s) => s.id), renderBank));
+  $('#add-drive').addEventListener('click', addFromDrive);
+  $('#n-sync').addEventListener('click', () => syncTap([P.s.id]));
+  window.addEventListener('online', () => GDrive.preload());
+  if (navigator.onLine) setTimeout(() => GDrive.preload(), 1500);
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', (e) => { if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = ''; });
 

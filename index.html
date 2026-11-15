@@ -57,6 +57,7 @@
       <span class="drop-main">Drop a file here, or tap to choose one</span>
       <span class="drop-sub">Word (.docx), PDF, text (.txt) or Markdown (.md)</span>
     </label>
+    <button id="add-drive" class="btn block drive-btn" type="button"><span class="gd-icon" aria-hidden="true"></span> From Google Drive</button>
     <p class="or">or paste your script below</p>
     <div id="title-row" class="field">
       <label for="add-title">Title</label>
@@ -138,6 +139,10 @@
     </div>
     <div class="panel-body">
       <button id="n-copy" class="btn primary block">Copy notes for Claude</button>
+      <div id="n-drive" class="drive-box" hidden>
+        <button id="n-sync" class="btn block">Sync with Google Drive</button>
+        <p id="n-drive-info" class="small muted"></p>
+      </div>
       <div id="copy-fallback" hidden>
         <p class="small">Copying was blocked. The text is selected below — press and hold (or ⌘C) to copy it.</p>
         <textarea id="copy-box" readonly></textarea>
@@ -192,6 +197,7 @@
     <p id="bank-summary" class="muted"></p>
     <div class="row-wrap">
       <button id="bank-copy" class="btn primary">Copy all notes</button>
+      <button id="bank-sync" class="btn" hidden>Sync Google Docs</button>
       <button id="bank-clear" class="btn danger">Clear all</button>
     </div>
     <p class="small muted">Clear all empties the flags and times on every script listed here. Each script’s run time is saved to its history first.</p>
@@ -210,6 +216,7 @@
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script src="parse.js"></script>
+<script src="gdrive.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

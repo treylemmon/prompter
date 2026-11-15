@@ -9,7 +9,8 @@ A teleprompter for preaching and speaking. Installable web app, works offline, n
 | `index.html` | The screens (library, add script, prompter, panels) |
 | `styles.css` | All the look and feel (colors are at the top) |
 | `parse.js` | Reads scripts: headings, `[cues]`, `[Slide N]`, `> scripture` |
-| `app.js` | Everything else: library, prompter, timers, flags, notes |
+| `app.js` | Everything else: library, prompter, timers, flags, notes, sync |
+| `gdrive.js` | Google Drive: sign-in, file picker, reading Docs, writing the notes Doc |
 | `sw.js` | Offline support (caches the app on the device) |
 | `manifest.webmanifest` | App name and icon for "Add to Home Screen" |
 | `lib/` | mammoth.js 1.8.0 (reads Word files) pdf.js 3.11.174 (reads PDFs), JSZip 3.10.1 (finds section breaks in Word files) |
@@ -37,3 +38,10 @@ With no headings at all, short lines (8 words or fewer, no ending punctuation) b
 ## Keys (keyboard or Bluetooth page turner)
 
 Space = play/pause · ↑/↓ = speed · ←/→ (or Page Up/Down) = back/forward a quarter screen · + / − = text size · Esc = close panel
+
+## Google Drive sync
+
+- Google Cloud project: **Prompter** (`prompter-514723`), owned by your Google account. Sign-in is in *Testing* mode: only accounts listed under **Google Auth Platform → Audience → Test users** can sign in.
+- The sign-in ID and picker key in `gdrive.js` are public identifiers locked to `https://treylemmon.github.io` (and `http://localhost:8766` for testing).
+- Prompter only sees Docs you pick and the notes files it creates (Google's `drive.file` permission).
+- **Sync** = pull the linked Doc (flags on unchanged lines are kept) → write `<title> — Prompter notes` into the **Prompter notes** folder in Drive.

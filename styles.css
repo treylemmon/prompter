@@ -383,3 +383,11 @@ table.times tr.total.over td:last-child { color: var(--red); }
   .top .btn { padding: 8px 12px; }
   .top h1 { font-size: 20px; }
 }
+
+/* Google Drive */
+.drive-btn { margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.gd-icon { width: 18px; height: 16px; display: inline-block;
+  background: conic-gradient(from 150deg, #1fa463 0 120deg, #ffd04b 0 240deg, #4688f4 0); clip-path: polygon(50% 0, 100% 88%, 0 88%); }
+.drive-box { margin-top: 10px; }
+.drive-box p { margin: 6px 2px 0; }
+.card-meta .gdoc { color: #8fb7ff; }
