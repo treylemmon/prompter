@@ -218,7 +218,7 @@ async function scriptMenu(id) {
     linkTap(id);
   } else if (choice === 'delete') {
     const ok = await modal({ title: 'Delete “' + s.title + '”?', text: 'This removes the script, its flags and its run history from this device. It can’t be undone.', buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, kind: 'danger confirm' }] });
-    if (ok) { Store.remove(id); renderLibrary(); toast('Deleted'); }
+    if (ok) { Store.remove(id); Media.removeForScript(id).catch(() => {}); renderLibrary(); toast('Deleted'); }
   }
 }
 
@@ -580,6 +580,8 @@ function openPrompter(id) {
   P.doc = Parser.parse(s.source);
   P.markers = [];
   P.curSec = -1;
+  P.keyIndex = new Map(P.doc.items.map((it) => [it.key, it.i]));
+  Review.exit(true);
   P.playing = false;
   P.started = false;
   P.pos = s.settings.pos || 0;
@@ -591,6 +593,7 @@ function openPrompter(id) {
   updateTimers(true);
   updateFlagCount();
   $('#hint').hidden = s.times.total > 0;
+  Rec.paint();
   pokeBar();
 }
 
@@ -711,6 +714,7 @@ function frame(ts) {
   if (dt > 0) {
     addTime(dt);
     setPos(P.pos + pxPerSec() * dt);
+    Rec.onFrame(dt);
     if (P.pos >= P.maxPos - 0.5) { reachedEnd(); return; }
   }
   P.raf = requestAnimationFrame(frame);
@@ -718,6 +722,7 @@ function frame(ts) {
 
 function play() {
   if (P.playing || !P.s) return;
+  if (Review.active()) Review.exit();
   if (P.s.times.finished) {
     // last run was finished and saved — start a fresh run
     resetTimes(true);
@@ -735,21 +740,24 @@ function play() {
   wakeOn();
   pokeBar();
   P.raf = requestAnimationFrame(frame);
+  Rec.onPlay();
 }
 
 function pause() {
   if (!P.playing) return;
   P.playing = false;
   cancelAnimationFrame(P.raf);
+  Rec.onPause();
   wakeOff();
   updateUI();
   saveNow();
   pokeBar();
 }
-const toggle = () => (P.playing ? pause() : play());
+const toggle = () => (Review.active() ? Review.toggle() : P.playing ? pause() : play());
 
 function reachedEnd() {
   pause();
+  Rec.finish();
   if (P.s.times.total >= 5) {
     saveRun();
     toast(`End of script — run saved (${fmt(P.s.times.total)})`, 4000);
@@ -761,7 +769,7 @@ function updateUI() {
   const finished = P.s && P.s.times.finished;
   b.textContent = P.playing ? '❚❚ Pause' : (finished ? '↺ Restart' : (P.started || (P.s && P.s.times.total > 0) ? '▶ Resume' : '▶ Start'));
   b.setAttribute('aria-label', P.playing ? 'Pause' : 'Start');
-  $('#paused-pill').hidden = P.playing || !(P.started || (P.s && P.s.times.total > 0));
+  $('#paused-pill').hidden = Review.active() || P.playing || !(P.started || (P.s && P.s.times.total > 0));
   $('#v-speed').textContent = P.s ? P.s.settings.speed : '';
 }
 
@@ -853,6 +861,7 @@ function saveSettingsSoon() {
 }
 
 function resetTimes(silent) {
+  Rec.finish();
   P.s.times = { total: 0, sections: {}, finished: false };
   saveNow();
   updateTimers(true);
@@ -869,6 +878,7 @@ function saveRun() {
   if (t.total < 1) { toast('Nothing to save yet — start the prompter first.'); return; }
   P.s.runs.push({ date: Date.now(), total: Math.round(t.total), target: P.s.target, sections: sectionTimesList().map((x) => ({ title: x.title, sec: Math.round(x.sec) })) });
   t.finished = true;
+  Rec.finish();
   saveNow();
   updateUI();
 }
@@ -885,6 +895,7 @@ function openFlag(i) {
   const it = P.doc.items[i];
   if (!it) return;
   pause();
+  Review.pauseAudio();
   P.flagItem = it;
   const f = P.s.flags[it.key];
   $('#flag-title').textContent = f ? 'Edit flag' : 'Flag this line';
@@ -962,7 +973,7 @@ function openJump() {
   P.doc.sections.forEach((s, si) => {
     const b = el('button', 'jump-item' + (si === P.curSec ? ' current' : ''));
     b.append(el('span', 'jn', si + 1 + '.'), el('span', 'jt', s.title), el('span', 'jtime', fmt(P.s.times.sections[s.key] || 0)));
-    b.addEventListener('click', () => { jumpToSection(si); closeAllPanels(); });
+    b.addEventListener('click', () => { if (!(Review.active() && Review.seekSection(si))) jumpToSection(si); closeAllPanels(); });
     list.appendChild(b);
   });
   showPanel('#panel-jump');
@@ -1034,6 +1045,7 @@ function renderNotes() {
 
 function openNotes() {
   renderNotes();
+  renderRecordings();
   showPanel('#panel-notes');
 }
 
@@ -1226,6 +1238,14 @@ function onKey(e) {
   }
   if (typing || anyPanelOpen()) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (Review.active()) {
+    if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); Review.toggle(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); Review.skip(-15); }
+    else if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); Review.skip(15); }
+    else if (e.key === '+' || e.key === '=') { e.preventDefault(); changeFont(4); }
+    else if (e.key === '-' || e.key === '_') { e.preventDefault(); changeFont(-4); }
+    return;
+  }
   switch (e.key) {
     case ' ': case 'Spacebar': e.preventDefault(); toggle(); break;
     case 'ArrowUp': e.preventDefault(); changeSpeed(1); break;
@@ -1248,7 +1268,8 @@ function go(hash) {
   else location.hash = hash;
 }
 function leavePrompter() {
-  if (P.s) { pause(); saveNow(); }
+  Review.exit(true);
+  if (P.s) { pause(); Rec.finish(); saveNow(); }
   closeAllPanels();
   P.s = null;
 }
@@ -1355,6 +1376,8 @@ function init() {
   $('#b-smaller').addEventListener('click', () => changeFont(-4));
   $('#b-bigger').addEventListener('click', () => changeFont(4));
   $('#b-mirror').addEventListener('click', toggleMirror);
+  $('#b-rec').addEventListener('click', () => Rec.toggle());
+  Review.setup();
   $('#b-jump').addEventListener('click', openJump);
   $('#b-notes').addEventListener('click', openNotes);
   $('#scrim').addEventListener('click', closeAllPanels);
@@ -1378,7 +1401,7 @@ function init() {
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', () => { if (P.s) layout(true); });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && P.s) { pause(); saveNow(); }
+    if (document.hidden && P.s) { pause(); Rec.finish(); Review.pauseAudio(); saveNow(); }
   });
   window.addEventListener('pagehide', () => { if (P.s) saveNow(); });
   window.addEventListener('hashchange', route);

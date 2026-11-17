@@ -10,6 +10,7 @@ A teleprompter for preaching and speaking. Installable web app, works offline, n
 | `styles.css` | All the look and feel (colors are at the top) |
 | `parse.js` | Reads scripts: headings, `[cues]`, `[Slide N]`, `> scripture` |
 | `app.js` | Everything else: library, prompter, timers, flags, notes, sync |
+| `media.js` | Recording run-throughs and playing them back in sync with the script |
 | `gdrive.js` | Google Drive: sign-in, file picker, reading Docs, writing the notes Doc |
 | `sw.js` | Offline support (caches the app on the device) |
 | `manifest.webmanifest` | App name and icon for "Add to Home Screen" |
@@ -45,3 +46,8 @@ Space = play/pause · ↑/↓ = speed · ←/→ (or Page Up/Down) = back/forwar
 - The sign-in ID and picker key in `gdrive.js` are public identifiers locked to `https://treylemmon.github.io` (and `http://localhost:8766` for testing).
 - Prompter only sees Docs you pick and the notes files it creates (Google's `drive.file` permission).
 - **Sync** = pull the linked Doc (flags on unchanged lines are kept) → write `<title> — Prompter notes` into the **Prompter notes** folder in Drive.
+
+## Recordings
+
+- **● Rec** in the control bar records your voice during a run (pauses when you pause). Recordings are saved on the device only (not in backups or Drive).
+- Notes → **Recordings**: Play (the script scrolls along with the audio), Share/Download, Delete.

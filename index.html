@@ -93,6 +93,8 @@
     <div id="readline" aria-hidden="true"><span class="arrow">▶</span></div>
   </div>
   <div id="paused-pill" hidden>PAUSED</div>
+  <div id="rec-pill" hidden><span class="dot"></span> REC <span id="rec-time">0:00</span></div>
+  <div id="play-pill">▶ PLAYBACK</div>
   <div id="hint" hidden>Tap empty space or press <kbd>Space</kbd> to start · Tap a line to flag it</div>
 
   <nav id="bar" aria-label="Prompter controls">
@@ -115,9 +117,23 @@
       <button id="b-smaller" class="cb" aria-label="Smaller text">A−</button>
       <button id="b-bigger" class="cb" aria-label="Bigger text">A+</button>
     </div>
-    <button id="b-jump" class="cb" aria-label="Jump to section">Jump</button>
-    <button id="b-mirror" class="cb" aria-pressed="false" aria-label="Mirror text">Mirror</button>
+    <button id="b-jump" class="cb" aria-label="Jump to section" title="Jump to section"><span class="ic">☰</span><span class="lbl">Jump</span></button>
+    <button id="b-mirror" class="cb" aria-pressed="false" aria-label="Mirror text" title="Mirror"><span class="ic">⇋</span><span class="lbl">Mirror</span></button>
+    <button id="b-rec" class="cb rec" aria-pressed="false" aria-label="Record run-through" title="Record"><span class="dot"></span><span class="lbl">Rec</span></button>
     <button id="b-notes" class="cb" aria-label="Notes">Notes <span id="flag-count" class="badge" hidden>0</span></button>
+  </nav>
+
+  <nav id="pbar" aria-label="Playback controls">
+    <button id="pb-exit" class="cb" title="Back to prompter">✕ Exit</button>
+    <button id="pb-back" class="cb" aria-label="Back 15 seconds">−15</button>
+    <button id="pb-play" class="cb play">▶ Play</button>
+    <button id="pb-fwd" class="cb" aria-label="Forward 15 seconds">+15</button>
+    <div class="pb-mid">
+      <span id="pb-title" class="tl"></span>
+      <input id="pb-seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Position in recording">
+    </div>
+    <span id="pb-time" class="timer">0:00 / 0:00</span>
+    <button id="pb-rate" class="cb" aria-label="Playback speed">1×</button>
   </nav>
 
   <div id="scrim" hidden></div>
@@ -160,6 +176,9 @@
         <button id="n-reset" class="btn">Reset times</button>
         <button id="n-clear" class="btn danger">Clear flags</button>
       </div>
+
+      <h3>Recordings</h3>
+      <ul id="n-recs" class="recs"></ul>
 
       <h3>Past run-throughs</h3>
       <ul id="n-runs" class="runs"></ul>
@@ -217,6 +236,7 @@
 
 <script src="parse.js"></script>
 <script src="gdrive.js"></script>
+<script src="media.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

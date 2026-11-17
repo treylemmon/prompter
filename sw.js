@@ -1,12 +1,13 @@
 /* Prompter — offline support.
    When you change any app file, bump VERSION so devices pick up the update. */
-const VERSION = 'prompter-v5';
+const VERSION = 'prompter-v6';
 const FILES = [
   './',
   './index.html',
   './styles.css',
   './parse.js',
   './gdrive.js',
+  './media.js',
   './app.js',
   './manifest.webmanifest',
   './lib/mammoth.browser.min.js',

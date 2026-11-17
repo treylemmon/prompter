@@ -391,3 +391,49 @@ table.times tr.total.over td:last-child { color: var(--red); }
 .drive-box { margin-top: 10px; }
 .drive-box p { margin: 6px 2px 0; }
 .card-meta .gdoc { color: #8fb7ff; }
+
+/* recording */
+.cb .ic { display: none; font-size: 18px; }
+.cb.rec .dot, #rec-pill .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--red); display: inline-block; }
+.cb.rec[aria-pressed="false"] .dot { background: transparent; border: 2px solid var(--red); }
+.cb.rec[aria-pressed="true"] { background: var(--red-soft); border-color: var(--red); color: #ffb3ad; }
+.cb.rec.live .dot { animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+#rec-pill {
+  position: absolute; z-index: 6; top: calc(12px + var(--sat)); left: calc(14px + var(--sal));
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(239, 91, 80, 0.16); border: 1px solid var(--red); color: #ffb3ad;
+  font-weight: 700; font-size: 14px; letter-spacing: 0.06em; padding: 5px 12px; border-radius: 999px;
+  pointer-events: none; font-variant-numeric: tabular-nums;
+}
+#rec-pill .dot { animation: blink 1.2s infinite; }
+#rec-pill.paused .dot { animation: none; opacity: 0.5; }
+#play-pill {
+  display: none; position: absolute; z-index: 6; top: calc(12px + var(--sat)); right: calc(14px + var(--sar));
+  background: var(--gold); color: #1a1408; font-weight: 700; font-size: 14px; letter-spacing: 0.08em;
+  padding: 6px 14px; border-radius: 999px; pointer-events: none;
+}
+/* playback mode */
+#pbar {
+  display: none; position: absolute; z-index: 7; left: 0; right: 0; bottom: 0;
+  flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 8px;
+  padding: 8px calc(10px + var(--sar)) calc(8px + var(--sab)) calc(10px + var(--sal));
+  background: rgba(18, 16, 13, 0.92); border-top: 1px solid var(--gold);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.pb-mid { display: flex; flex-direction: column; flex: 1 1 160px; min-width: 120px; max-width: 420px; }
+#pb-seek { width: 100%; accent-color: var(--gold); height: 28px; }
+body.reviewing #bar, body.reviewing #rec-pill { display: none !important; }
+body.reviewing #pbar { display: flex; }
+body.reviewing #play-pill { display: block; }
+/* recordings list */
+.recs { list-style: none; padding: 0; margin: 0; }
+.rec-item { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rec-info { flex: 1 1 140px; display: flex; flex-direction: column; }
+.recs .btn.small { padding: 6px 10px; }
+@media (max-height: 500px), (max-width: 900px) {
+  .cb .ic { display: inline; }
+  #b-jump .lbl, #b-mirror .lbl, #b-rec .lbl { display: none; }
+  .val { min-width: 26px; }
+  #pbar { gap: 4px 5px; padding-top: 5px; padding-bottom: calc(5px + var(--sab)); }
+}
