@@ -11,6 +11,7 @@ A teleprompter for preaching and speaking. Installable web app, works offline, n
 | `parse.js` | Reads scripts: headings, `[cues]`, `[Slide N]`, `> scripture` |
 | `app.js` | Everything else: library, prompter, timers, flags, notes, sync |
 | `media.js` | Recording run-throughs and playing them back in sync with the script |
+| `sync.js` | Sync across devices through a “Prompter library.json” file in Google Drive |
 | `gdrive.js` | Google Drive: sign-in, file picker, reading Docs, writing the notes Doc |
 | `sw.js` | Offline support (caches the app on the device) |
 | `manifest.webmanifest` | App name and icon for "Add to Home Screen" |
@@ -51,3 +52,13 @@ Space = play/pause · ↑/↓ = speed · ←/→ (or Page Up/Down) = back/forwar
 
 - **● Rec** in the control bar records your voice during a run (pauses when you pause). Recordings are saved on the device only (not in backups or Drive).
 - Notes → **Recordings**: Play (the script scrolls along with the audio), Share/Download, Delete.
+
+## Sync across devices
+
+- Home screen → **Sync across devices** → turn on (once per device, same Google account).
+- Syncs scripts, flags + notes (merged line by line), times, run history, targets and settings. Reading position and recordings stay per device.
+- Runs on open, a few seconds after changes, when you come back to the app, and every minute. If Google's sign-in expires, tap **↻ Reconnect Google**.
+
+## Speed
+
+Speed is a speaking pace: each step = 14 words a minute (speed 10 ≈ 140 wpm). The label above it shows how long the whole script takes at that pace.

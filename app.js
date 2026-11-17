@@ -97,8 +97,45 @@ const modalOpen = () => !$('#modal').hidden;
 /* ============================================================
    2. STORAGE (localStorage, one key per script)
    ============================================================ */
+/* What gets compared to decide which device has the newer version (see sync.js).
+   Reading position is per device, so it isn't synced. */
+const GROUPS = {
+  meta: (s) => [s.title, s.source, s.target, s.drive ? [s.drive.id, s.drive.part, s.drive.notesId, s.drive.modifiedTime] : null],
+  times: (s) => [s.times, (s.runs || []).length],
+  settings: (s) => { const x = { ...(s.settings || {}) }; delete x.pos; return x; },
+};
+
+/** Note when each part of a script last changed, and remember removed flags, so devices can merge. */
+function stampChanges(prev, s) {
+  const now = Date.now();
+  s.v = s.v || {};
+  for (const g of Object.keys(GROUPS)) {
+    if (!prev) { s.v[g] = s.v[g] || s.createdAt || now; continue; }
+    if (JSON.stringify(GROUPS[g](prev)) !== JSON.stringify(GROUPS[g](s))) s.v[g] = now;
+  }
+  s.flags = s.flags || {};
+  s.flagDel = s.flagDel || {};
+  if (prev) {
+    const pf = prev.flags || {};
+    for (const k of Object.keys(pf)) if (!(k in s.flags)) s.flagDel[k] = now;
+    for (const k of Object.keys(s.flags)) {
+      if (!pf[k] || JSON.stringify({ ...pf[k], at: 0 }) !== JSON.stringify({ ...s.flags[k], at: 0 })) {
+        s.flags[k].at = now;
+        delete s.flagDel[k];
+      }
+    }
+  }
+}
+
+/** Everything that syncs, ignoring per-device things (position, last-saved time). */
+function syncSig(s) {
+  const c = { ...s, updatedAt: 0, settings: { ...(s.settings || {}), pos: 0 } };
+  return JSON.stringify(c);
+}
+
 const Store = {
   IDS: 'prompter.ids',
+  DEL: 'prompter.deleted',
   key: (id) => 'prompter.s.' + id,
   ids() {
     try { return JSON.parse(localStorage.getItem(this.IDS) || '[]'); } catch { return []; }
@@ -109,8 +146,17 @@ const Store = {
   all() {
     return this.ids().map((id) => this.get(id)).filter(Boolean);
   },
+  /** Normal save: records what changed, then lets sync know. */
   save(s) {
+    const prev = this.get(s.id);
+    stampChanges(prev, s);
     s.updatedAt = Date.now();
+    const ok = this.write(s);
+    if (ok && typeof LibSync !== 'undefined' && (!prev || syncSig(prev) !== syncSig(s))) LibSync.changed();
+    return ok;
+  },
+  /** Save exactly as given (used when merging another device's changes). */
+  write(s) {
     try {
       localStorage.setItem(this.key(s.id), JSON.stringify(s));
       const ids = this.ids();
@@ -121,9 +167,21 @@ const Store = {
       return false;
     }
   },
-  remove(id) {
+  remove(id, noTombstone) {
     localStorage.removeItem(this.key(id));
     localStorage.setItem(this.IDS, JSON.stringify(this.ids().filter((x) => x !== id)));
+    if (!noTombstone) {
+      const d = this.deleted();
+      d[id] = Date.now();
+      this.setDeleted(d);
+      if (typeof LibSync !== 'undefined') LibSync.changed();
+    }
+  },
+  deleted() {
+    try { return JSON.parse(localStorage.getItem(this.DEL) || '{}'); } catch { return {}; }
+  },
+  setDeleted(d) {
+    try { localStorage.setItem(this.DEL, JSON.stringify(d)); } catch {}
   },
 };
 
@@ -135,7 +193,7 @@ function newScript(title, source) {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     target: 25 * 60,
-    settings: { speed: 5, font: null, mirror: false, pos: 0 },
+    settings: { speed: 10, font: null, mirror: false, pos: 0, paceV: 2 },
     flags: {},
     times: { total: 0, sections: {}, finished: false },
     runs: [],
@@ -581,6 +639,8 @@ function openPrompter(id) {
   P.markers = [];
   P.curSec = -1;
   P.keyIndex = new Map(P.doc.items.map((it) => [it.key, it.i]));
+  P.words = countWords(P.doc);
+  if (s.settings.paceV !== 2) { s.settings.speed = 10; s.settings.paceV = 2; } // speed now means words per minute
   Review.exit(true);
   P.playing = false;
   P.started = false;
@@ -670,6 +730,7 @@ function layout(keepAnchor = true) {
 
   P.markers = [...c.querySelectorAll('.sec-mark')].map((m) => ({ sec: +m.dataset.sec, top: m.offsetTop }));
   P.maxPos = Math.max(0, c.scrollHeight - H);
+  paintEstimate();
 
   if (anchor) {
     const e = P.itemEls[anchor.i];
@@ -703,8 +764,22 @@ function sectionAt(pos) {
   return cur;
 }
 
+/* Speed is a speaking pace: each step = 14 words a minute (speed 10 ≈ 140 wpm),
+   so the same speed takes the same time on a phone or a laptop. */
+const WPM_PER_STEP = 14;
+const wpm = () => P.s.settings.speed * WPM_PER_STEP;
 function pxPerSec() {
-  return P.s.settings.speed * P.s.settings.font * 0.1;
+  const perWord = P.maxPos > 0 && P.words > 0 ? P.maxPos / P.words : P.s.settings.font * 0.5;
+  return (wpm() / 60) * perWord;
+}
+/** Words you actually say (headings and [cues] don't count). */
+function countWords(doc) {
+  let n = 0;
+  for (const it of doc.items) {
+    if (it.type === 'h') continue;
+    for (const tok of Parser.tokens(it.text)) if (tok.kind === 'text') n += tok.text.split(/\s+/).filter(Boolean).length;
+  }
+  return n;
 }
 
 function frame(ts) {
@@ -767,10 +842,31 @@ function reachedEnd() {
 function updateUI() {
   const b = $('#b-play');
   const finished = P.s && P.s.times.finished;
-  b.textContent = P.playing ? '❚❚ Pause' : (finished ? '↺ Restart' : (P.started || (P.s && P.s.times.total > 0) ? '▶ Resume' : '▶ Start'));
+  const [ic, word] = P.playing ? ['❚❚', 'Pause'] : finished ? ['↺', 'Restart'] : (P.started || (P.s && P.s.times.total > 0)) ? ['▶', 'Resume'] : ['▶', 'Start'];
+  b.innerHTML = '';
+  b.append(document.createTextNode(ic), el('span', 'lbl', ' ' + word));
   b.setAttribute('aria-label', P.playing ? 'Pause' : 'Start');
   $('#paused-pill').hidden = Review.active() || P.playing || !(P.started || (P.s && P.s.times.total > 0));
   $('#v-speed').textContent = P.s ? P.s.settings.speed : '';
+  paintEstimate();
+}
+
+/** How long the whole script takes at the current speed (like pace on a treadmill). */
+function estimateSecs() {
+  if (!P.s || !P.maxPos) return 0;
+  return P.maxPos / pxPerSec();
+}
+function fmtMins(sec) {
+  const m = Math.round(sec / 60);
+  return m < 1 ? '<1 min' : m + ' min';
+}
+function paintEstimate() {
+  const e = $('#v-est');
+  if (!e || !P.s) return;
+  const sec = estimateSecs();
+  e.textContent = sec ? '≈' + fmtMins(sec) : 'Speed';
+  e.classList.toggle('over', sec > P.s.target);
+  e.title = sec ? `At speed ${P.s.settings.speed} (${wpm()} words a minute), the whole script takes about ${fmtMins(sec)} (target ${fmt(P.s.target)})` : '';
 }
 
 /* wake lock */
@@ -799,6 +895,8 @@ function pokeBar() {
 function changeSpeed(d) {
   P.s.settings.speed = clamp(P.s.settings.speed + d, 1, 30);
   updateUI(); saveSettingsSoon(); pokeBar();
+  const est = estimateSecs();
+  if (est) toast(`Speed ${P.s.settings.speed} (${wpm()} words/min) · about ${fmtMins(est)} for the whole script` + (P.started ? ` (${fmtMins((P.maxPos - P.pos) / pxPerSec())} left)` : ''), 1800);
 }
 function changeFont(d) {
   P.s.settings.font = clamp(P.s.settings.font + d, 18, 140);
@@ -1398,6 +1496,7 @@ function init() {
   $('#view-prompter').addEventListener('mousemove', () => { if (P.playing) pokeBar(); });
 
   setupStage();
+  LibSync.setup();
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', () => { if (P.s) layout(true); });
   document.addEventListener('visibilitychange', () => {

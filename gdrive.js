@@ -88,7 +88,7 @@ const GDrive = (() => {
     }
     return new Promise((res, rej) => {
       pending = { res, rej };
-      tokenClient.requestAccessToken({ prompt: token ? '' : 'consent' });
+      tokenClient.requestAccessToken({ prompt: '' });
     });
   }
 
@@ -210,5 +210,47 @@ const GDrive = (() => {
     return (await r.json()).id;
   }
 
-  return { preload, withToken, signedIn, signOut, pick, meta, readText, writeNotes, DOC, DOCX };
+  const LIB_KEY = 'prompter.libfile';
+  const LIB_NAME = 'Prompter library.json';
+
+  /** Find (or create) the shared library file that keeps devices in sync. */
+  async function libraryFile() {
+    let id = null;
+    try { id = localStorage.getItem(LIB_KEY); } catch {}
+    if (id) {
+      try { const m = await meta(id); if (!m.trashed) return id; } catch {}
+    }
+    const q = encodeURIComponent(`name='${LIB_NAME}' and trashed=false`);
+    const found = await (await api(`${DRIVE}/files?q=${q}&orderBy=modifiedTime desc&fields=files(id)`)).json();
+    if (found.files && found.files.length) id = found.files[0].id;
+    else {
+      const folder = await notesFolder();
+      const boundary = 'prompter' + Math.random().toString(36).slice(2);
+      const body =
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+        JSON.stringify({ name: LIB_NAME, mimeType: 'application/json', parents: [folder] }) +
+        `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n{}\r\n--${boundary}--`;
+      const r = await api(`${UPLOAD}/files?uploadType=multipart&fields=id`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'multipart/related; boundary=' + boundary },
+        body,
+      });
+      id = (await r.json()).id;
+    }
+    try { localStorage.setItem(LIB_KEY, id); } catch {}
+    return id;
+  }
+  async function readJSON(id) {
+    const t = await (await api(`${DRIVE}/files/${id}?alt=media`, { cache: 'no-store' })).text();
+    try { return JSON.parse(t || '{}'); } catch { return {}; }
+  }
+  async function writeJSON(id, obj) {
+    await api(`${UPLOAD}/files/${id}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(obj),
+    });
+  }
+
+  return { preload, withToken, signedIn, signOut, pick, meta, readText, writeNotes, libraryFile, readJSON, writeJSON, DOC, DOCX };
 })();

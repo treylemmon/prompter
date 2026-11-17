@@ -22,6 +22,7 @@
 <section id="view-library" class="view">
   <header class="top">
     <h1 class="brand"><span class="brand-mark">▶</span> Prompter</h1>
+    <button id="btn-reconnect" class="btn reconnect" hidden>↻ Reconnect Google</button>
     <button id="btn-bank" class="btn">All notes <span id="bank-count" class="badge" hidden>0</span></button>
     <button id="btn-add" class="btn primary">+ Add<span class="wide"> script</span></button>
   </header>
@@ -32,6 +33,15 @@
       <p>Tap <b>+ Add script</b> to drop in a Word file, a text file, or paste your sermon.</p>
       <button id="btn-sample" class="btn">Try the sample script</button>
     </div>
+    <section class="sync-box">
+      <h2>Sync across devices</h2>
+      <p id="sync-status" class="muted"></p>
+      <div id="sync-on" hidden><button id="btn-sync-on" class="btn primary">Turn on sync with Google Drive</button></div>
+      <div id="sync-controls" class="row-wrap" hidden>
+        <button id="btn-sync-now" class="btn small">Sync now</button>
+        <button id="btn-sync-off" class="btn small ghost">Turn off on this device</button>
+      </div>
+    </section>
     <footer class="lib-foot">
       <p>Scripts are saved on this device only.</p>
       <div class="row-wrap">
@@ -110,7 +120,7 @@
     </div>
     <div class="grp" role="group" aria-label="Speed">
       <button id="b-slower" class="cb" aria-label="Slower">−</button>
-      <span class="val"><span class="tl">Speed</span><span id="v-speed">5</span></span>
+      <span class="val"><span id="v-est" class="tl">Speed</span><span id="v-speed">5</span></span>
       <button id="b-faster" class="cb" aria-label="Faster">+</button>
     </div>
     <div class="grp" role="group" aria-label="Text size">
@@ -237,6 +247,7 @@
 <script src="parse.js"></script>
 <script src="gdrive.js"></script>
 <script src="media.js"></script>
+<script src="sync.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

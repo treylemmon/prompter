@@ -437,3 +437,20 @@ body.reviewing #play-pill { display: block; }
   .val { min-width: 26px; }
   #pbar { gap: 4px 5px; padding-top: 5px; padding-bottom: calc(5px + var(--sab)); }
 }
+
+/* sync across devices */
+.sync-box { margin-top: 28px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg-2); }
+.sync-box h2 { font-size: 17px; margin: 0 0 4px; }
+.sync-box p { margin: 0 0 12px; font-size: 15px; }
+.btn.reconnect { border-color: var(--gold); color: var(--gold); background: var(--gold-soft); white-space: nowrap; }
+@media (max-width: 480px) { .btn.reconnect { font-size: 13px; padding: 6px 10px; } }
+
+/* speed → time estimate */
+#v-est { text-transform: none; letter-spacing: 0; font-size: 11px; color: var(--gold); }
+#v-est.over { color: var(--red); }
+.val { min-width: 52px; }
+@media (max-height: 500px), (max-width: 900px) { .val { min-width: 46px; } }
+@media (max-height: 500px), (max-width: 900px) {
+  .cb.play { min-width: 56px; }
+  .cb.play .lbl { display: none; }
+}
